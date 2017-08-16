@@ -59,7 +59,7 @@ def Main():
         # Import the English NLP Models
         print("Loading Models")
         en = spacy.load('en_core_web_md')
-        print("models loaded")
+        print("Models loaded")
         while True:
             HandleConnections(sock, en)
 
