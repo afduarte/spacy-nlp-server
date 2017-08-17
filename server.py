@@ -6,6 +6,11 @@ import sys
 import os
 import json
 import traceback
+import mmh3
+
+wall = "http://wallscope.co.uk/ontology/nlp/"
+rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+rdfs = "http://www.w3.org/2000/01/rdf-schema#"
 
 
 def HandleConnections(s, model):
