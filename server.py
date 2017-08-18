@@ -1,5 +1,5 @@
 import socket
-import textacy
+# import textacy
 import spacy
 import signal
 import sys
@@ -7,10 +7,14 @@ import os
 import json
 import traceback
 import mmh3
+import en_core_web_sm
+from flask import Flask, Response, stream_with_context, request
+import time
 
 wall = "http://wallscope.co.uk/ontology/nlp/"
 rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 rdfs = "http://www.w3.org/2000/01/rdf-schema#"
+wall_text = "http://wallscope.co.uk/resource/annotation/"
 
 
 def HandleConnections(s, model):
@@ -30,21 +34,44 @@ def HandleConnections(s, model):
     conn.close()
 
 
+def jsonify(ent):
+    d = {}
+    d["start"] = ent.start_char
+    d["end"] = ent.end_char
+    d["type"] = ent.label_
+    d["text"] = ent.text
+    return json.dumps(d) + "\n"
+
+
+def turtleify(ent):
+    start = str(ent.start_char)
+    end = str(ent.end_char)
+    unique = str(mmh3.hash(ent.text))
+    uri = "<" + wall_text + "uid-" + unique + "> "
+    message = uri
+    message += "<"+wall+"start> "+start+" ; "
+    message += "<"+wall+"end> "+end+" ; "
+    message += "<"+wall+"annotationType> <"+wall_text+"type/"+ent.label_+"> ; "
+    message += "<"+wall+"annotationText> "+json.dumps(ent.text)+" . \n"
+    return message
+
+
 def RecognizeEntities(data, model, conn):
     doc = model(data)
-    nouns = textacy.extract.noun_chunks(doc)
-    for ent in nouns:
-        d = {}
-        d["start"] = ent.start_char
-        d["end"] = ent.end_char
-        d["type"] = ent.label_
-        d["text"] = ent.text
-        message = json.dumps(d) + "\n"
+    # nouns = textacy.extract.noun_chunks(doc)
+    for ent in doc.ents:
+        message = turtleify(ent)
         conn.send(message.encode('ascii'))
     return True
 
+def RecognizeEntitiesGenerator(data, model):
+    doc = model(data)
+    for ent in doc.ents:
+        message = turtleify(ent)
+        yield message
+    return True
 
-def Main():
+def Socket():
     # Socket boilerplate
     sockfile = "/tmp/nlp-socket.sock"
 
@@ -63,7 +90,8 @@ def Main():
         print("Socket listening")
         # Import the English NLP Models
         print("Loading Models")
-        en = spacy.load('en_core_web_md')
+        en = spacy.load('en_core_web_sm')
+        # en = en_core_web_sm.load()
         print("Models loaded")
         while True:
             HandleConnections(sock, en)
@@ -74,5 +102,22 @@ def Main():
         os.remove(sockfile)
         sys.exit()
 
+app = Flask(__name__)
+
+print("Socket listening")
+# Import the English NLP Models
+print("Loading Models")
+en = spacy.load('en_core_web_sm')
+# en = en_core_web_sm.load()
+print("Models loaded")
+
+@app.route('/', methods=['POST'])
+def index():
+    text = request.form['text']
+    return Response(stream_with_context(RecognizeEntitiesGenerator(text, en)))
+
+def WebServer():
+    app.run(debug=True, host='0.0.0.0', port=5005)
+
 if __name__ == '__main__':
-    Main()
+    WebServer()
